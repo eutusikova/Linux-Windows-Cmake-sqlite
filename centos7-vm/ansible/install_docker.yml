@@ -1,0 +1,44 @@
+- hosts: all
+  become: yes
+  tasks:
+    - name: Исправить репозиторий CentOS
+      replace:
+        path: /etc/yum.repos.d/CentOS-Base.repo
+        regexp: 'mirrorlist=.*'
+        replace: '#mirrorlist='
+      notify: clean_yum_cache
+
+    - name: Установить baseurl для vault.centos.org
+      replace:
+        path: /etc/yum.repos.d/CentOS-Base.repo
+        regexp: '#baseurl=http://mirror.centos.org/centos/\$releasever'
+        replace: 'baseurl=http://vault.centos.org/7.9.2009'
+
+    - name: Установить зависимости
+      yum:
+        name: yum-utils
+        state: present
+
+    - name: Добавить репозиторий Docker
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+
+    - name: Установить Docker
+      yum:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Запустить и включить Docker
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+  handlers:
+    - name: clean_yum_cache
+      command: yum clean all
+

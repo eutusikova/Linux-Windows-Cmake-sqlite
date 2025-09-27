@@ -1,0 +1,70 @@
+- name: Сборка sqlite3.so через Docker
+  hosts: all
+  become: yes
+  vars:
+    work_dir: /home/vagrant/sqlite-build
+  
+  tasks:
+    - name: Проверить что Docker работает
+      command: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: docker_info.rc != 0
+
+    - name: Создать рабочую директорию
+      file:
+        path: "{{ work_dir }}"
+        state: directory
+        owner: vagrant
+        group: vagrant
+        mode: '0755'
+
+    - name: Скачать архив sqlite
+      get_url:
+        url: https://www.sqlite.org/2018/sqlite-amalgamation-3260000.zip
+        dest: "{{ work_dir }}/sqlite-amalgamation-3260000.zip"
+        owner: vagrant
+        group: vagrant
+
+    - name: Скопировать Dockerfile на ВМ
+      copy:
+        src: ../sqlite-build/Dockerfile
+        dest: "{{ work_dir }}/Dockerfile"
+        owner: vagrant
+        group: vagrant
+        mode: '0644'
+
+    - name: Собрать Docker образ
+      command:
+        cmd: docker build -t sqlite-builder .
+        chdir: "{{ work_dir }}"
+      register: docker_build_result
+      changed_when: "'Successfully built' in docker_build_result.stdout"
+
+    - name: Запустить контейнер для сборки
+      command:
+        cmd: docker run --name sqlite-build sqlite-builder
+        chdir: "{{ work_dir }}"
+      async: 300
+      poll: 0
+
+    - name: Ждать завершения контейнера
+      command:
+        cmd: docker wait sqlite-build
+        chdir: "{{ work_dir }}"
+      register: container_exit_code
+      until: container_exit_code.rc == 0
+      retries: 30
+      delay: 5
+
+    - name: Скопировать результат сборки из контейнера
+      command:
+        cmd: docker cp sqlite-build:/build/sqlite-amalgamation-3260000/sqlite3.so sqlite3.so
+        chdir: "{{ work_dir }}"
+
+    - name: Остановить и удалить контейнер
+      command:
+        cmd: docker rm -f sqlite-build
+        chdir: "{{ work_dir }}"
+      ignore_errors: yes
+
